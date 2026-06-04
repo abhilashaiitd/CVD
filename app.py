@@ -157,7 +157,7 @@ def analyze_spectrum(uploaded_file):
     candidate_peaks = np.array(filtered_peaks)
 
     # --------------------------------------------------------
-    # LORENTZIAN FIT
+    # LORENTZIAN FIT — now also returns FWHM = 2 * |gamma|
     # --------------------------------------------------------
 
     final_peaks = []
@@ -192,8 +192,10 @@ def analyze_spectrum(uploaded_file):
 
             x0, gamma, A = popt
 
+            fwhm = 2 * abs(gamma)          # ← NEW: FWHM from Lorentzian half-width
+
             final_peaks.append(
-                (x0, A)
+                (x0, A, fwhm)              # ← store fwhm alongside position & amplitude
             )
 
         except:
@@ -206,6 +208,9 @@ def analyze_spectrum(uploaded_file):
 
         "x":
             x_use,
+
+        "y_raw":
+            y,                             # ← NEW: raw (unprocessed) intensity
 
         "signal":
             signal,
@@ -246,7 +251,7 @@ if uploaded_files:
     )
 
     # ========================================================
-    # PEAK TABLE
+    # PEAK TABLE  (now includes FWHM column)
     # ========================================================
 
     peak_rows = []
@@ -268,17 +273,14 @@ if uploaded_files:
                 "Peak Number":
                     i,
 
-                "Raman Shift":
-                    round(
-                        peak[0],
-                        2
-                    ),
+                "Raman Shift (cm⁻¹)":
+                    round(peak[0], 2),
 
                 "Intensity":
-                    round(
-                        peak[1],
-                        2
-                    )
+                    round(peak[1], 2),
+
+                "FWHM (cm⁻¹)":          # ← NEW column
+                    round(peak[2], 2)
             })
 
     peak_df = pd.DataFrame(
@@ -308,23 +310,21 @@ if uploaded_files:
 
         csv,
 
-        file_name=
-        "Peak_Table.csv",
+        file_name="Peak_Table.csv",
 
-        mime=
-        "text/csv"
+        mime="text/csv"
     )
 
     # ========================================================
-    # OVERLAY GRAPH
+    # OVERLAY GRAPH  (processed signals)
     # ========================================================
 
     st.subheader(
-        "Overlay Raman Spectra"
+        "Overlay Raman Spectra (Processed)"
     )
 
     fig, ax = plt.subplots(
-        figsize=(12,6)
+        figsize=(12, 6)
     )
 
     for result in results:
@@ -339,72 +339,135 @@ if uploaded_files:
         )
 
     ax.legend()
-
     ax.grid()
-
-    ax.set_xlabel(
-        "Raman Shift"
-    )
-
-    ax.set_ylabel(
-        "Intensity"
-    )
+    ax.set_xlabel("Raman Shift (cm⁻¹)")
+    ax.set_ylabel("Intensity")
 
     st.pyplot(fig)
 
     # ========================================================
-    # PEAK COMPARISON GRAPH
+    # RAW DATA GRAPHS — one per sample, shown below processed
+    # ========================================================
+
+    st.subheader(
+        "Raw Data Spectra (per sample)"
+    )
+
+    for result in results:
+
+        st.markdown(f"**{result['sample']}**")
+
+        fig_raw, axes = plt.subplots(
+            2, 1,
+            figsize=(12, 8),
+            sharex=True
+        )
+
+        # — top panel: processed / baseline-corrected signal
+        axes[0].plot(
+            result["x"],
+            result["signal"],
+            color="steelblue",
+            linewidth=1.2
+        )
+
+        # mark detected peaks on processed panel
+        for peak in result["peaks"]:
+            axes[0].axvline(
+                peak[0],
+                color="red",
+                linestyle="--",
+                alpha=0.5,
+                linewidth=0.8
+            )
+
+        axes[0].set_title("Processed Signal (baseline-corrected)")
+        axes[0].set_ylabel("Intensity")
+        axes[0].grid(alpha=0.4)
+
+        # — bottom panel: raw (unprocessed) signal
+        raw_x = np.arange(len(result["y_raw"]))   # index-based if x not aligned
+        # use the shifted x axis if lengths match
+        if len(result["x"]) == len(result["y_raw"]):
+            raw_x = result["x"]
+
+        axes[1].plot(
+            raw_x,
+            result["y_raw"],
+            color="darkorange",
+            linewidth=1.0,
+            alpha=0.85
+        )
+
+        axes[1].set_title("Raw Signal (unprocessed)")
+        axes[1].set_ylabel("Intensity")
+        axes[1].set_xlabel("Raman Shift (cm⁻¹)")
+        axes[1].grid(alpha=0.4)
+
+        plt.tight_layout()
+        st.pyplot(fig_raw)
+        plt.close(fig_raw)
+
+    # ========================================================
+    # PEAK COMPARISON GRAPH — fixed overlapping labels
     # ========================================================
 
     st.subheader(
         "Peak Comparison Graph"
     )
 
+    sample_names = [r["sample"] for r in results]
+    y_positions  = list(range(len(sample_names)))   # numeric y-axis
+
     fig2, ax2 = plt.subplots(
-        figsize=(14,8)
+        figsize=(14, max(6, len(results) * 1.4))
     )
 
-    for result in results:
+    for y_idx, result in enumerate(results):
 
-        sample = result["sample"]
-
-        peaks = [
-
-            p[0]
-
-            for p in result["peaks"]
-        ]
+        peaks = [p[0] for p in result["peaks"]]
 
         ax2.scatter(
-
             peaks,
-
-            [sample] * len(peaks),
-
-            s=80
+            [y_idx] * len(peaks),
+            s=80,
+            zorder=3
         )
 
-        for peak in peaks:
+        # ---- stagger labels vertically to avoid collisions ----
+        prev_x    = -np.inf
+        row       = 0          # alternates 0 / 1 / 2 to spread close labels
+        row_offsets = [0.18, 0.36, -0.18]   # vertical nudge per row
+
+        for peak in sorted(peaks):
+
+            # switch row when labels would overlap (within 60 cm⁻¹)
+            if peak - prev_x < 60:
+                row = (row + 1) % len(row_offsets)
+            else:
+                row = 0
 
             ax2.text(
-
                 peak,
-
-                sample,
-
+                y_idx + row_offsets[row],
                 f"{peak:.0f}",
-
-                fontsize=8
+                fontsize=8,
+                ha="center",
+                va="bottom"
             )
 
-    ax2.grid()
+            prev_x = peak
 
-    ax2.set_xlabel(
-        "Raman Shift"
-    )
+    # replace numeric ticks with sample names
+    ax2.set_yticks(y_positions)
+    ax2.set_yticklabels(sample_names)
 
-    ax2.set_ylabel(
-        "Sample"
-    )
+    ax2.grid(alpha=0.35)
+    ax2.set_xlabel("Raman Shift (cm⁻¹)")
+    ax2.set_ylabel("Sample")
 
+    # add a little vertical padding so top labels aren't clipped
+    ax2.set_ylim(-0.7, len(results) - 0.3)
+
+    plt.tight_layout()
     st.pyplot(fig2)
