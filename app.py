@@ -43,13 +43,17 @@ def analyze_spectrum(uploaded_file):
     x = df.iloc[:, 0].values
     y = df.iloc[:, 1].values
 
-    # --------------------------------------------------------
-    # SHIFT TO RAYLEIGH PEAK
-    # --------------------------------------------------------
+   
+   # --------------------------------------------------------
+# USE ONLY POSITIVE RAMAN SHIFTS
+# --------------------------------------------------------
 
-    max_idx = np.argmax(y)
-
-    x_use = x - x[max_idx]
+    x_use = x.copy()
+    
+    mask = x_use >= 0
+    
+    x_use = x_use[mask]
+    y = y[mask]
 
     # --------------------------------------------------------
     # SMOOTHING
