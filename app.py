@@ -339,7 +339,7 @@ if uploaded_files:
             linewidth=1.0,
             alpha=0.85
         )
-        axes[1].set_ylim(0, 700)
+        axes[1].set_ylim(350, 600)
         axes[1].set_xlim(X_MIN, X_MAX)
         axes[1].set_title("Raw Signal (Rayleigh-corrected, unprocessed)")
         axes[1].set_ylabel("Intensity")
