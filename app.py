@@ -32,23 +32,13 @@ def lorentzian(x, x0, gamma, A):
 # Suppresses the intense elastic scattering peak near 0 cm⁻¹.
 # Any signal within `rayleigh_cutoff` cm⁻¹ of zero is zeroed out.
 # ============================================================
-
-RAYLEIGH_CUTOFF = 50
+RAYLEIGH_CUTOFF = 50   # cm⁻¹  — adjust if your notch filter edge differs
 
 def apply_rayleigh_correction(x, y, cutoff=RAYLEIGH_CUTOFF):
-    """
-    Shift the strongest peak (Rayleigh peak) to 0 cm⁻¹
-    and keep only the positive Stokes side.
-    """
-
-    rayleigh_idx = np.argmax(y)
-
-    x_corrected = x - x[rayleigh_idx]
-
-    mask = x_corrected >= 0
-
-    return x_corrected[mask], y[mask]
-
+    """Zero-out the Rayleigh region (|x| < cutoff)."""
+    y_corrected = y.copy().astype(float)
+    y_corrected[np.abs(x) < cutoff] = 0.0
+    return y_corrected    
 # ============================================================
 # RAMAN SHIFT DISPLAY RANGE
 # ============================================================
