@@ -1,6 +1,7 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import pywt
 import matplotlib.pyplot as plt
 
 from scipy.signal import savgol_filter, find_peaks
@@ -25,6 +26,37 @@ def lorentzian(x, x0, gamma, A):
         gamma**2 /
         ((x - x0)**2 + gamma**2)
     )
+
+def wavelet_denoise(y):
+
+    coeffs = pywt.wavedec(
+        y,
+        'db4',
+        level=4
+    )
+
+    sigma = (
+        np.median(np.abs(coeffs[-1]))
+        / 0.6745
+    )
+
+    threshold = sigma * np.sqrt(
+        2 * np.log(len(y))
+    )
+
+    coeffs[1:] = [
+        pywt.threshold(
+            c,
+            threshold,
+            mode='soft'
+        )
+        for c in coeffs[1:]
+    ]
+
+    return pywt.waverec(
+        coeffs,
+        'db4'
+    )[:len(y)]
 
 
 # ============================================================
@@ -92,11 +124,17 @@ def analyze_spectrum(uploaded_file):
 
     y = apply_rayleigh_correction(x_use, y, cutoff=RAYLEIGH_CUTOFF)
 
-    # --------------------------------------------------------
-    # SMOOTHING
-    # --------------------------------------------------------
+   # --------------------------------------------------------
+   # DENOISING + SMOOTHING
+   # --------------------------------------------------------
 
-    y_smooth = savgol_filter(y, 21, 3)
+    y_wave = wavelet_denoise(y)
+
+    y_smooth = savgol_filter(
+        y_wave,
+        11,
+        3
+    )
 
     # --------------------------------------------------------
     # BASELINE
@@ -110,7 +148,7 @@ def analyze_spectrum(uploaded_file):
     # NOISE  (estimated from a quiet region beyond Rayleigh)
     # --------------------------------------------------------
 
-    noise_region = signal[(x_use > 700) & (x_use < 1200)]
+    noise_region = signal[(x_use > 400) & (x_use < 550)]
 
     if len(noise_region) == 0:
         noise_std = np.std(signal)
@@ -196,6 +234,9 @@ def analyze_spectrum(uploaded_file):
             x0, gamma, A = popt
             fwhm = 2 * abs(gamma)
 
+            local_noise = np.std(y_fit - lorentzian(x_fit, *popt))
+            snr = A / (local_noise + 1e-9)
+
             # Only keep fits whose centre falls inside display range
             if RAYLEIGH_CUTOFF < x0 <= X_MAX:
                 final_peaks.append((x0, A, fwhm))
@@ -249,12 +290,14 @@ if uploaded_files:
                 "Raman Shift (cm⁻¹)": round(peak[0], 2),
                 "Intensity":          round(peak[1], 2),
                 "FWHM (cm⁻¹)":        round(peak[2], 2)
+                "SNR":                round(peak[3], 2)
             })
 
     peak_df = pd.DataFrame(peak_rows)
 
     st.subheader("Detected Peaks")
     st.dataframe(peak_df, use_container_width=True)
+
 
     # ========================================================
     # CSV DOWNLOAD
