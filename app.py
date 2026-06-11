@@ -289,7 +289,7 @@ if uploaded_files:
                 "Peak Number":        i,
                 "Raman Shift (cm⁻¹)": round(peak[0], 2),
                 "Intensity":          round(peak[1], 2),
-                "FWHM (cm⁻¹)":        round(peak[2], 2)
+                "FWHM (cm⁻¹)":        round(peak[2], 2),
                 "SNR":                round(peak[3], 2)
             })
 
