@@ -215,12 +215,6 @@ def analyze_spectrum(uploaded_file):
         width=2
     )
 
-   for p in candidate_peaks:
-    axes[0].axvline(
-        x_use[p],
-        color="green",
-        alpha=0.3
-    )
 
     # Remove low-shift region (beyond Rayleigh cutoff) and
     # restrict to display range
@@ -296,12 +290,17 @@ def analyze_spectrum(uploaded_file):
         except Exception:
             pass
 
+    candidate_peak_positions = [
+    x_use[p] for p in candidate_peaks
+    ]
+
     return {
         "sample": uploaded_file.name,
         "x":      x_use,
         "y_raw":  y_raw_pos,   # shifted + masked raw signal for raw panel
         "signal": signal,
-        "peaks":  final_peaks
+        "peaks":  final_peaks,
+        "candidate_peaks": candidate_peak_positions
     }
 
 
@@ -407,6 +406,15 @@ if uploaded_files:
             linewidth=1.2
         )
 
+
+        # Show ALL candidate peaks (green)
+        for p in result.get("candidate_peaks", []):
+            axes[0].axvline(
+                p,
+                color="green",
+                alpha=0.3,
+                linewidth=0.8
+            )
         # Mark detected peaks
         for peak in result["peaks"]:
             axes[0].axvline(
