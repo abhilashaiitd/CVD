@@ -167,11 +167,7 @@ def analyze_spectrum(uploaded_file):
 
     y_wave = wavelet_denoise(y)
 
-    y_smooth = savgol_filter(
-        y_wave,
-        7,
-        2
-    )
+    y_smooth = y_wave
 
     # baseline = baseline_als(
     #     y_smooth,
