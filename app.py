@@ -193,7 +193,7 @@ def analyze_spectrum(uploaded_file):
     # NOISE  (estimated from a quiet region beyond Rayleigh)
     # --------------------------------------------------------
 
-    noise_region = signal[(x_use > 400) & (x_use < 550)]
+    noise_region = signal[(x_use > 500) & (x_use < 550)]
 
     if len(noise_region) == 0:
         noise_std = np.std(signal)
