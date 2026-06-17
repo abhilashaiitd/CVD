@@ -169,14 +169,14 @@ def analyze_spectrum(uploaded_file):
 
     y_smooth = savgol_filter(
         y_wave,
-        11,
-        3
+        7,
+        2
     )
 
     baseline = baseline_als(
         y_smooth,
-        lam=1e5,
-        p=0.01
+        lam=1e4,
+        p=0.05
     )
     
     signal = y_smooth - baseline
@@ -213,6 +213,13 @@ def analyze_spectrum(uploaded_file):
         height=dynamic_height,
         distance=8,
         width=2
+    )
+
+    for p in candidate_peaks:
+    axes[0].axvline(
+        x_use[p],
+        color="green",
+        alpha=0.3
     )
 
     # Remove low-shift region (beyond Rayleigh cutoff) and
