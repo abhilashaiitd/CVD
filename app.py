@@ -173,21 +173,21 @@ def analyze_spectrum(uploaded_file):
         2
     )
 
-    baseline = baseline_als(
-        y_smooth,
-        lam=1e4,
-        p=0.05
-    )
+    # baseline = baseline_als(
+    #     y_smooth,
+    #     lam=1e4,
+    #     p=0.05
+    # )
     
-    signal = y_smooth - baseline
+    # signal = y_smooth - baseline
     
-    signal = np.clip(
-        signal,
-        0,
-        None
-    )
-    
-       
+    # signal = np.clip(
+    #     signal,
+    #     0,
+    #     None
+    # )
+
+    signal = y_smooth.copy()
 
     # --------------------------------------------------------
     # NOISE  (estimated from a quiet region beyond Rayleigh)
