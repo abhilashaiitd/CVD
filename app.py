@@ -131,6 +131,9 @@ def analyze_spectrum(uploaded_file):
     x = df.iloc[:, 0].values
     y = df.iloc[:, 1].values
 
+    st.write("Raw intensity range:")
+    st.write(np.min(y), np.max(y))
+
     # --------------------------------------------------------
     # SHIFT X-AXIS SO RAYLEIGH PEAK (intensity maximum) = 0
     # This is the core calibration from the reference script:
@@ -184,6 +187,9 @@ def analyze_spectrum(uploaded_file):
     # )
 
     signal = y_smooth.copy()
+
+    st.write("Processed intensity range:")
+    st.write(np.min(signal), np.max(signal))
 
     # --------------------------------------------------------
     # NOISE  (estimated from a quiet region beyond Rayleigh)
