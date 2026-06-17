@@ -40,7 +40,7 @@ def wavelet_denoise(y):
         / 0.6745
     )
 
-    threshold = sigma * np.sqrt(
+    threshold = 0.5 * sigma * np.sqrt(
         2 * np.log(len(y))
     )
 
@@ -155,8 +155,8 @@ def analyze_spectrum(uploaded_file):
     else:
         noise_std = np.std(noise_region)
 
-    dynamic_prominence = 4 * noise_std
-    dynamic_height     = 3 * noise_std
+    dynamic_prominence = 2 * noise_std
+    dynamic_height     = 1.5 * noise_std
 
     # --------------------------------------------------------
     # CANDIDATE PEAKS
@@ -202,10 +202,10 @@ def analyze_spectrum(uploaded_file):
         local_noise  = np.std(local_region)
         snr          = peak_height / (local_noise + 1e-9)
 
-        if snr < 2.5:
+        if snr < 1.5:
             continue
-        if width < 3:
-            continue
+        # if width < 3:
+        #     continue
 
         filtered_peaks.append(p)
 
