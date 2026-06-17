@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import pywt
 import matplotlib.pyplot as plt
+from scipy import sparse
+from scipy.sparse.linalg import spsolve
 
 from scipy.signal import savgol_filter, find_peaks
 from scipy.optimize import curve_fit
@@ -136,13 +138,57 @@ def analyze_spectrum(uploaded_file):
         3
     )
 
-    # --------------------------------------------------------
-    # BASELINE
-    # --------------------------------------------------------
+    def baseline_als(y, lam=1e5, p=0.01, niter=10):
 
-    baseline = savgol_filter(y_smooth, 151, 3)
-    signal   = y_smooth - baseline
-    signal   = np.clip(signal, 0, None)
+    L = len(y)
+
+    D = sparse.diags(
+        [1, -2, 1],
+        [0, -1, -2],
+        shape=(L, L-2)
+    )
+
+    w = np.ones(L)
+
+    for i in range(niter):
+
+        W = sparse.spdiags(
+            w,
+            0,
+            L,
+            L
+        )
+
+        Z = W + lam * D.dot(D.T)
+
+        z = spsolve(
+            Z,
+            w * y
+        )
+
+        w = p * (y > z) + (1-p) * (y < z)
+
+    return z
+
+       # --------------------------------------------------------
+    # ALS BASELINE CORRECTION
+    # --------------------------------------------------------
+    
+    baseline = baseline_als(
+        y_smooth,
+        lam=1e5,
+        p=0.01
+    )
+    
+    signal = y_smooth - baseline
+    
+    signal = np.clip(
+        signal,
+        0,
+        None
+    )
+    
+       
 
     # --------------------------------------------------------
     # NOISE  (estimated from a quiet region beyond Rayleigh)
