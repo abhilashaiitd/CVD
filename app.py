@@ -79,6 +79,41 @@ def apply_rayleigh_correction(x, y, cutoff=RAYLEIGH_CUTOFF):
 
 X_MIN, X_MAX = 0, 550   # cm⁻¹
 
+   # --------------------------------------------------------
+    # ALS BASELINE CORRECTION
+    # --------------------------------------------------------
+    
+def baseline_als(y, lam=1e5, p=0.01, niter=10):
+
+    L = len(y)
+
+    D = sparse.diags(
+        [1, -2, 1],
+        [0, -1, -2],
+        shape=(L, L-2)
+    )
+
+    w = np.ones(L)
+
+    for i in range(niter):
+
+        W = sparse.spdiags(
+            w,
+            0,
+            L,
+            L
+        )
+
+        Z = W + lam * D.dot(D.T)
+
+        z = spsolve(
+            Z,
+            w * y
+        )
+
+        w = p * (y > z) + (1-p) * (y < z)
+
+    return z
 
 # ============================================================
 # ANALYSIS FUNCTION
@@ -138,42 +173,6 @@ def analyze_spectrum(uploaded_file):
         3
     )
 
-def baseline_als(y, lam=1e5, p=0.01, niter=10):
-
-    L = len(y)
-
-    D = sparse.diags(
-        [1, -2, 1],
-        [0, -1, -2],
-        shape=(L, L-2)
-    )
-
-    w = np.ones(L)
-
-    for i in range(niter):
-
-        W = sparse.spdiags(
-            w,
-            0,
-            L,
-            L
-        )
-
-        Z = W + lam * D.dot(D.T)
-
-        z = spsolve(
-            Z,
-            w * y
-        )
-
-        w = p * (y > z) + (1-p) * (y < z)
-
-    return z
-
-       # --------------------------------------------------------
-    # ALS BASELINE CORRECTION
-    # --------------------------------------------------------
-    
     baseline = baseline_als(
         y_smooth,
         lam=1e5,
