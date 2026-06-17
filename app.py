@@ -215,7 +215,7 @@ def analyze_spectrum(uploaded_file):
         width=2
     )
 
-    for p in candidate_peaks:
+   for p in candidate_peaks:
     axes[0].axvline(
         x_use[p],
         color="green",
