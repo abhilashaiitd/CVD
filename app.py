@@ -42,7 +42,7 @@ def wavelet_denoise(y):
         / 0.6745
     )
 
-    threshold = 0.5 * sigma * np.sqrt(
+    threshold = 0.2 * sigma * np.sqrt(
         2 * np.log(len(y))
     )
 
@@ -200,8 +200,8 @@ def analyze_spectrum(uploaded_file):
     else:
         noise_std = np.std(noise_region)
 
-    dynamic_prominence = 2 * noise_std
-    dynamic_height     = 1.5 * noise_std
+    dynamic_prominence = 1.0 * noise_std
+    dynamic_height     = 0.5 * noise_std
 
     # --------------------------------------------------------
     # CANDIDATE PEAKS
