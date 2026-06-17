@@ -138,7 +138,7 @@ def analyze_spectrum(uploaded_file):
         3
     )
 
-    def baseline_als(y, lam=1e5, p=0.01, niter=10):
+def baseline_als(y, lam=1e5, p=0.01, niter=10):
 
     L = len(y)
 
