@@ -1,10 +1,7 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import pywt
 import matplotlib.pyplot as plt
-from scipy import sparse
-from scipy.sparse.linalg import spsolve
 
 from scipy.signal import savgol_filter, find_peaks
 from scipy.optimize import curve_fit
@@ -29,94 +26,6 @@ def lorentzian(x, x0, gamma, A):
         ((x - x0)**2 + gamma**2)
     )
 
-def wavelet_denoise(y):
-
-    coeffs = pywt.wavedec(
-        y,
-        'db4',
-        level=4
-    )
-
-    sigma = (
-        np.median(np.abs(coeffs[-1]))
-        / 0.6745
-    )
-
-    threshold = 0.2 * sigma * np.sqrt(
-        2 * np.log(len(y))
-    )
-
-    coeffs[1:] = [
-        pywt.threshold(
-            c,
-            threshold,
-            mode='soft'
-        )
-        for c in coeffs[1:]
-    ]
-
-    return pywt.waverec(
-        coeffs,
-        'db4'
-    )[:len(y)]
-
-
-# ============================================================
-# RAYLEIGH CORRECTION
-# Suppresses the intense elastic scattering peak near 0 cm⁻¹.
-# Any signal within `rayleigh_cutoff` cm⁻¹ of zero is zeroed out.
-# ============================================================
-RAYLEIGH_CUTOFF = 50   # cm⁻¹  — adjust if your notch filter edge differs
-
-# def apply_rayleigh_correction(x, y, cutoff=RAYLEIGH_CUTOFF):
-#     """Zero-out the Rayleigh region (|x| < cutoff)."""
-#     y_corrected = y.copy().astype(float)
-#     y_corrected[np.abs(x) < cutoff] = 0.0
-#     return y_corrected    
-
-def apply_rayleigh_correction(x,y,cutoff):
-    return y
-# ============================================================
-# RAMAN SHIFT DISPLAY RANGE
-# ============================================================
-
-X_MIN, X_MAX = 0, 550   # cm⁻¹
-
-   # --------------------------------------------------------
-    # ALS BASELINE CORRECTION
-    # --------------------------------------------------------
-    
-def baseline_als(y, lam=1e5, p=0.01, niter=10):
-
-    L = len(y)
-
-    D = sparse.diags(
-        [1, -2, 1],
-        [0, -1, -2],
-        shape=(L, L-2)
-    )
-
-    w = np.ones(L)
-
-    for i in range(niter):
-
-        W = sparse.spdiags(
-            w,
-            0,
-            L,
-            L
-        )
-
-        Z = W + lam * D.dot(D.T)
-
-        z = spsolve(
-            Z,
-            w * y
-        )
-
-        w = p * (y > z) + (1-p) * (y < z)
-
-    return z
 
 # ============================================================
 # ANALYSIS FUNCTION
@@ -134,136 +43,125 @@ def analyze_spectrum(uploaded_file):
     x = df.iloc[:, 0].values
     y = df.iloc[:, 1].values
 
-    st.write("Raw intensity range:")
-    st.write(np.min(y), np.max(y))
-
-    # --------------------------------------------------------
-    # SHIFT X-AXIS SO RAYLEIGH PEAK (intensity maximum) = 0
-    # This is the core calibration from the reference script:
-    # find the index of maximum intensity and subtract that
-    # x-value from the entire axis, so the elastic scatter
-    # peak sits exactly at 0 cm⁻¹.
-    # --------------------------------------------------------
-
-    max_idx = np.argmax(y)
-    x_use   = x - x[max_idx]       # Rayleigh peak → 0
-
-    # Keep the raw y as-is for the raw panel (before any processing)
-    y_raw_original = y.copy()
-
-    # --------------------------------------------------------
-    # RETAIN ONLY POSITIVE RAMAN SHIFTS  (Stokes side)
-    # --------------------------------------------------------
-
-    pos_mask  = x_use >= 0
-    x_use     = x_use[pos_mask]
-    y         = y[pos_mask]
-    y_raw_pos = y_raw_original[pos_mask]   # raw signal aligned to same mask
-
-    # --------------------------------------------------------
-    # RAYLEIGH CORRECTION — zero out residual elastic scatter
-    # within RAYLEIGH_CUTOFF cm⁻¹ of the shifted zero
-    # --------------------------------------------------------
-
-    y = apply_rayleigh_correction(x_use, y, cutoff=RAYLEIGH_CUTOFF)
-
+   
    # --------------------------------------------------------
-   # DENOISING + SMOOTHING
-   # --------------------------------------------------------
+# USE ONLY POSITIVE RAMAN SHIFTS
+# --------------------------------------------------------
 
-    y_wave = wavelet_denoise(y)
-
-    y_smooth = y_wave
-
-    # baseline = baseline_als(
-    #     y_smooth,
-    #     lam=1e4,
-    #     p=0.05
-    # )
+    x_use = x.copy()
     
-    # signal = y_smooth - baseline
+    mask = x_use >= 0
     
-    # signal = np.clip(
-    #     signal,
-    #     0,
-    #     None
-    # )
-
-    signal = y_smooth - np.min(y_smooth)
-
-    st.write("Processed intensity range:")
-    st.write(np.min(signal), np.max(signal))
+    x_use = x_use[mask]
+    y = y[mask]
 
     # --------------------------------------------------------
-    # NOISE  (estimated from a quiet region beyond Rayleigh)
+    # SMOOTHING
     # --------------------------------------------------------
 
-    noise_region = signal[(x_use > 500) & (x_use < 550)]
+    y_smooth = savgol_filter(
+        y,
+        21,
+        3
+    )
+
+    # --------------------------------------------------------
+    # BASELINE
+    # --------------------------------------------------------
+
+    baseline = savgol_filter(
+        y_smooth,
+        151,
+        3
+    )
+
+    signal = y_smooth - baseline
+
+    signal = np.clip(signal, 0, None)
+
+    # --------------------------------------------------------
+    # NOISE
+    # --------------------------------------------------------
+
+    noise_region = signal[
+        (x_use > 700) &
+        (x_use < 1200)
+    ]
 
     if len(noise_region) == 0:
         noise_std = np.std(signal)
     else:
         noise_std = np.std(noise_region)
 
-    dynamic_prominence = 1.0 * noise_std
-    dynamic_height     = 0.5 * noise_std
+    dynamic_prominence = 4 * noise_std
+
+    dynamic_height = 3 * noise_std
 
     # --------------------------------------------------------
-    # CANDIDATE PEAKS
+    # PEAK DETECTION
     # --------------------------------------------------------
 
-    candidate_peaks, _ = find_peaks(
+    candidate_peaks, properties = find_peaks(
+
         signal,
+
         prominence=dynamic_prominence,
+
         height=dynamic_height,
+
         distance=8,
+
         width=2
     )
 
-
-    # Remove low-shift region (beyond Rayleigh cutoff) and
-    # restrict to display range
     candidate_peaks = np.array([
-        p for p in candidate_peaks
-        if RAYLEIGH_CUTOFF < x_use[p] <= X_MAX
-    ])
 
-    # --------------------------------------------------------
-    # REMOVE FALSE PEAKS  (SNR + width filter)
-    # --------------------------------------------------------
+        p for p in candidate_peaks
+
+        if x_use[p] > 50
+    ])
 
     filtered_peaks = []
 
     for p in candidate_peaks:
 
         peak_height = signal[p]
+
         half_height = peak_height / 2
 
         left = p
+
         while left > 0 and signal[left] > half_height:
             left -= 1
 
         right = p
-        while right < len(signal) - 1 and signal[right] > half_height:
+
+        while right < len(signal)-1 and signal[right] > half_height:
             right += 1
 
         width = right - left
 
-        local_region = signal[max(0, p - 20):min(len(signal), p + 20)]
-        local_noise  = np.std(local_region)
-        snr          = peak_height / (local_noise + 1e-9)
+        local_region = signal[
+            max(0, p-20):
+            min(len(signal), p+20)
+        ]
 
-        if snr < 1.5:
+        local_noise = np.std(local_region)
+
+        snr = peak_height / (local_noise + 1e-9)
+
+        if snr < 2.5:
             continue
-        # if width < 3:
-        #     continue
+
+        if width < 3:
+            continue
 
         filtered_peaks.append(p)
 
     candidate_peaks = np.array(filtered_peaks)
 
     # --------------------------------------------------------
-    # LORENTZIAN FIT — returns position, amplitude, FWHM
+    # LORENTZIAN FIT — now also returns FWHM = 2 * |gamma|
     # --------------------------------------------------------
 
     final_peaks = []
@@ -272,40 +170,57 @@ def analyze_spectrum(uploaded_file):
 
         try:
 
-            left  = max(0, p - 15)
-            right = min(len(signal) - 1, p + 15)
+            left = max(0, p-15)
+
+            right = min(
+                len(signal)-1,
+                p+15
+            )
 
             x_fit = x_use[left:right]
+
             y_fit = signal[left:right]
 
-            p0 = [x_use[p], 5, signal[p]]
+            p0 = [
+                x_use[p],
+                5,
+                signal[p]
+            ]
 
-            popt, _ = curve_fit(lorentzian, x_fit, y_fit, p0=p0)
+            popt, _ = curve_fit(
+                lorentzian,
+                x_fit,
+                y_fit,
+                p0=p0
+            )
 
             x0, gamma, A = popt
-            fwhm = 2 * abs(gamma)
 
-            local_noise = np.std(y_fit - lorentzian(x_fit, *popt))
-            snr = A / (local_noise + 1e-9)
+            fwhm = 2 * abs(gamma)          # ← NEW: FWHM from Lorentzian half-width
 
-            # Only keep fits whose centre falls inside display range
-            if RAYLEIGH_CUTOFF < x0 <= X_MAX:
-                final_peaks.append((x0, A, fwhm))
+            final_peaks.append(
+                (x0, A, fwhm)              # ← store fwhm alongside position & amplitude
+            )
 
-        except Exception:
+        except:
             pass
 
-    candidate_peak_positions = [
-    x_use[p] for p in candidate_peaks
-    ]
-
     return {
-        "sample": uploaded_file.name,
-        "x":      x_use,
-        "y_raw":  y_raw_pos,   # shifted + masked raw signal for raw panel
-        "signal": signal,
-        "peaks":  final_peaks,
-        "candidate_peaks": candidate_peak_positions
+
+        "sample":
+            uploaded_file.name,
+
+        "x":
+            x_use,
+
+        "y_raw":
+            y,                             # ← NEW: raw (unprocessed) intensity
+
+        "signal":
+            signal,
+
+        "peaks":
+            final_peaks
     }
 
 
@@ -314,8 +229,11 @@ def analyze_spectrum(uploaded_file):
 # ============================================================
 
 uploaded_files = st.file_uploader(
+
     "Upload Raman Files",
+
     type=["txt"],
+
     accept_multiple_files=True
 )
 
@@ -325,73 +243,119 @@ if uploaded_files:
     results = []
 
     with st.spinner("Analyzing Files..."):
+
         for file in uploaded_files:
+
             result = analyze_spectrum(file)
+
             results.append(result)
 
-    st.success(f"{len(results)} files processed.")
+    st.success(
+        f"{len(results)} files processed."
+    )
 
     # ========================================================
-    # PEAK TABLE  (position | intensity | FWHM)
+    # PEAK TABLE  (now includes FWHM column)
     # ========================================================
 
     peak_rows = []
 
     for result in results:
+
         sample = result["sample"]
-        for i, peak in enumerate(result["peaks"], start=1):
+
+        for i, peak in enumerate(
+            result["peaks"],
+            start=1
+        ):
+
             peak_rows.append({
-                "Sample":             sample,
-                "Peak Number":        i,
-                "Raman Shift (cm⁻¹)": round(peak[0], 2),
-                "Intensity":          round(peak[1], 2),
-                "FWHM (cm⁻¹)":        round(peak[2], 2)
+
+                "Sample":
+                    sample,
+
+                "Peak Number":
+                    i,
+
+                "Raman Shift (cm⁻¹)":
+                    round(peak[0], 2),
+
+                "Intensity":
+                    round(peak[1], 2),
+
+                "FWHM (cm⁻¹)":          # ← NEW column
+                    round(peak[2], 2)
             })
 
-    peak_df = pd.DataFrame(peak_rows)
+    peak_df = pd.DataFrame(
+        peak_rows
+    )
 
-    st.subheader("Detected Peaks")
-    st.dataframe(peak_df, use_container_width=True)
+    st.subheader(
+        "Detected Peaks"
+    )
 
+    st.dataframe(
+        peak_df,
+        use_container_width=True
+    )
 
     # ========================================================
     # CSV DOWNLOAD
     # ========================================================
 
-    csv = peak_df.to_csv(index=False)
+    csv = peak_df.to_csv(
+        index=False
+    )
 
     st.download_button(
+
         "Download Peak Table",
+
         csv,
+
         file_name="Peak_Table.csv",
+
         mime="text/csv"
     )
 
     # ========================================================
-    # OVERLAY GRAPH  (processed signals, zoomed 0–550 cm⁻¹)
+    # OVERLAY GRAPH  (processed signals)
     # ========================================================
 
-    st.subheader("Overlay Raman Spectra (Processed)")
+    st.subheader(
+        "Overlay Raman Spectra (Processed)"
+    )
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(
+        figsize=(12, 6)
+    )
 
     for result in results:
-        ax.plot(result["x"], result["signal"], label=result["sample"])
 
-    ax.set_xlim(X_MIN, X_MAX)
+        ax.plot(
+
+            result["x"],
+
+            result["signal"],
+
+            label=result["sample"]
+        )
+
     ax.legend()
     ax.grid()
     ax.set_xlabel("Raman Shift (cm⁻¹)")
     ax.set_ylabel("Intensity")
 
     st.pyplot(fig)
-    plt.close(fig)
 
     # ========================================================
-    # RAW + PROCESSED panels — one figure per sample
+    # RAW DATA GRAPHS — one per sample, shown below processed
     # ========================================================
 
-    st.subheader("Raw Data Spectra (per sample)")
+    st.subheader(
+        "Raw Data Spectra (per sample)"
+    )
 
     for result in results:
 
@@ -403,7 +367,7 @@ if uploaded_files:
             sharex=True
         )
 
-        # — top panel: baseline-corrected / processed signal ——————————
+        # — top panel: processed / baseline-corrected signal
         axes[0].plot(
             result["x"],
             result["signal"],
@@ -411,16 +375,7 @@ if uploaded_files:
             linewidth=1.2
         )
 
-
-        # Show ALL candidate peaks (green)
-        for p in result.get("candidate_peaks", []):
-            axes[0].axvline(
-                p,
-                color="green",
-                alpha=0.3,
-                linewidth=0.8
-            )
-        # Mark detected peaks
+        # mark detected peaks on processed panel
         for peak in result["peaks"]:
             axes[0].axvline(
                 peak[0],
@@ -430,14 +385,15 @@ if uploaded_files:
                 linewidth=0.8
             )
 
-        axes[0].set_xlim(X_MIN, X_MAX)
-        axes[0].set_title("Processed Signal (baseline-corrected, Rayleigh-corrected)")
+        axes[0].set_title("Processed Signal (baseline-corrected)")
         axes[0].set_ylabel("Intensity")
-        axes[0].set_xlabel("Raman Shift (cm⁻¹)")   # ← x-axis label on processed panel
         axes[0].grid(alpha=0.4)
 
-        # — bottom panel: raw (Rayleigh-corrected) signal —————————————
-        raw_x = result["x"] if len(result["x"]) == len(result["y_raw"]) else np.arange(len(result["y_raw"]))
+        # — bottom panel: raw (unprocessed) signal
+        raw_x = np.arange(len(result["y_raw"]))   # index-based if x not aligned
+        # use the shifted x axis if lengths match
+        if len(result["x"]) == len(result["y_raw"]):
+            raw_x = result["x"]
 
         axes[1].plot(
             raw_x,
@@ -446,9 +402,8 @@ if uploaded_files:
             linewidth=1.0,
             alpha=0.85
         )
-        axes[1].set_ylim(450, 500)
-        axes[1].set_xlim(X_MIN, X_MAX)
-        axes[1].set_title("Raw Signal (Rayleigh-corrected, unprocessed)")
+
+        axes[1].set_title("Raw Signal (unprocessed)")
         axes[1].set_ylabel("Intensity")
         axes[1].set_xlabel("Raman Shift (cm⁻¹)")
         axes[1].grid(alpha=0.4)
@@ -458,13 +413,15 @@ if uploaded_files:
         plt.close(fig_raw)
 
     # ========================================================
-    # PEAK COMPARISON GRAPH — staggered labels, zoomed range
+    # PEAK COMPARISON GRAPH — fixed overlapping labels
     # ========================================================
 
-    st.subheader("Peak Comparison Graph")
+    st.subheader(
+        "Peak Comparison Graph"
+    )
 
     sample_names = [r["sample"] for r in results]
-    y_positions  = list(range(len(sample_names)))
+    y_positions  = list(range(len(sample_names)))   # numeric y-axis
 
     fig2, ax2 = plt.subplots(
         figsize=(14, max(6, len(results) * 1.4))
@@ -474,15 +431,21 @@ if uploaded_files:
 
         peaks = [p[0] for p in result["peaks"]]
 
-        ax2.scatter(peaks, [y_idx] * len(peaks), s=80, zorder=3)
+        ax2.scatter(
+            peaks,
+            [y_idx] * len(peaks),
+            s=80,
+            zorder=3
+        )
 
-        # Stagger close labels vertically
-        prev_x      = -np.inf
-        row         = 0
-        row_offsets = [0.18, 0.36, -0.18]
+        # ---- stagger labels vertically to avoid collisions ----
+        prev_x    = -np.inf
+        row       = 0          # alternates 0 / 1 / 2 to spread close labels
+        row_offsets = [0.18, 0.36, -0.18]   # vertical nudge per row
 
         for peak in sorted(peaks):
 
+            # switch row when labels would overlap (within 60 cm⁻¹)
             if peak - prev_x < 60:
                 row = (row + 1) % len(row_offsets)
             else:
@@ -499,14 +462,16 @@ if uploaded_files:
 
             prev_x = peak
 
-    ax2.set_xlim(X_MIN, X_MAX)
+    # replace numeric ticks with sample names
     ax2.set_yticks(y_positions)
     ax2.set_yticklabels(sample_names)
+
     ax2.grid(alpha=0.35)
     ax2.set_xlabel("Raman Shift (cm⁻¹)")
     ax2.set_ylabel("Sample")
+
+    # add a little vertical padding so top labels aren't clipped
     ax2.set_ylim(-0.7, len(results) - 0.3)
 
     plt.tight_layout()
     st.pyplot(fig2)
-    plt.close(fig2)
