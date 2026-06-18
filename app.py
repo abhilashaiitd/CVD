@@ -68,11 +68,14 @@ def wavelet_denoise(y):
 # ============================================================
 RAYLEIGH_CUTOFF = 50   # cm⁻¹  — adjust if your notch filter edge differs
 
-def apply_rayleigh_correction(x, y, cutoff=RAYLEIGH_CUTOFF):
-    """Zero-out the Rayleigh region (|x| < cutoff)."""
-    y_corrected = y.copy().astype(float)
-    y_corrected[np.abs(x) < cutoff] = 0.0
-    return y_corrected    
+# def apply_rayleigh_correction(x, y, cutoff=RAYLEIGH_CUTOFF):
+#     """Zero-out the Rayleigh region (|x| < cutoff)."""
+#     y_corrected = y.copy().astype(float)
+#     y_corrected[np.abs(x) < cutoff] = 0.0
+#     return y_corrected    
+
+def apply_rayleigh_correction(x,y,cutoff):
+    return y
 # ============================================================
 # RAMAN SHIFT DISPLAY RANGE
 # ============================================================
@@ -186,7 +189,7 @@ def analyze_spectrum(uploaded_file):
     #     None
     # )
 
-    signal = y_smooth.copy()
+    signal = y_smooth - np.min(y_smooth)
 
     st.write("Processed intensity range:")
     st.write(np.min(signal), np.max(signal))
